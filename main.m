@@ -8,7 +8,7 @@ loadType = [4.0, -2.0, 0.0];
 nGrid = 16;
 nIter = 100000;
 eIter = 1.0e-10;
-devices = [0, 0];
+devices = [0, 1];
 outputStep = 10000;
 
 CFL = 0.5;                                                 % Courant-Friedrichs-Lewy
@@ -80,8 +80,8 @@ fwrite(fil, G(:), 'float');
 fclose(fil);
 
 % GPU CALCULATION
-%system('nvcc -O 3 main.cu');
-%system('.\a.exe config.json');
+system('nvcc -O 3 main.cu');
+system('.\a.exe config.json');
 
 rows = 2;
 cols = 3;

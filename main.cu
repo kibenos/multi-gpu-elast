@@ -343,21 +343,21 @@ int main(int argc, char** argv) {
     {
         gpuErrchk(cudaSetDevice(devices[device_idx]));
 
-        gpuErrchk(cudaStreamCreate(&(streams[device_idx])));
+        gpuErrchk(cudaStreamCreate(&streams[device_idx]));
 
         // constants
-        kernel_pa[device_idx].dt     = config["dt"];
-        kernel_pa[device_idx].dX     = config["dx"];
-        kernel_pa[device_idx].dY     = config["dy"];
-        kernel_pa[device_idx].Lx     = config["phys_size"][0];
-        kernel_pa[device_idx].Ly     = config["phys_size"][1];
-        kernel_pa[device_idx].dampX  = config["dampx"];
-        kernel_pa[device_idx].dampY  = config["dampy"];
-        kernel_pa[device_idx].rho0   = config["rho0"];
-        kernel_pa[device_idx].coh    = config["coh"];
-        kernel_pa[device_idx].P0     = kernel_pa[device_idx].coh;
-        kernel_pa[device_idx].Nx     = Nx;
-        kernel_pa[device_idx].Ny     = Ny;
+        kernel_pa[device_idx].dt    = config["dt"];
+        kernel_pa[device_idx].dX    = config["dx"];
+        kernel_pa[device_idx].dY    = config["dy"];
+        kernel_pa[device_idx].Lx    = config["phys_size"][0];
+        kernel_pa[device_idx].Ly    = config["phys_size"][1];
+        kernel_pa[device_idx].dampX = config["dampx"];
+        kernel_pa[device_idx].dampY = config["dampy"];
+        kernel_pa[device_idx].rho0  = config["rho0"];
+        kernel_pa[device_idx].coh   = config["coh"];
+        kernel_pa[device_idx].P0    = kernel_pa[device_idx].coh;
+        kernel_pa[device_idx].Nx    = Nx;
+        kernel_pa[device_idx].Ny    = Ny;
 
         // slice size & shift
         //  --------> y
@@ -399,18 +399,18 @@ int main(int argc, char** argv) {
 
         // space arrays
         // stress
-        set_matrix_zero(&kernel_pa[device_idx].P, Nx, ysize);
-        set_matrix_zero(&kernel_pa[device_idx].tauXX, Nx, ysize);
-        set_matrix_zero(&kernel_pa[device_idx].tauYY, Nx, ysize);
+        set_matrix_zero(&kernel_pa[device_idx].P    , Nx    , ysize    );
+        set_matrix_zero(&kernel_pa[device_idx].tauXX, Nx    , ysize    );
+        set_matrix_zero(&kernel_pa[device_idx].tauYY, Nx    , ysize    );
         set_matrix_zero(&kernel_pa[device_idx].tauXY, Nx - 1, ysize - 1);
 
         // displacement
-        set_matrix_zero(&kernel_pa[device_idx].Ux, Nx + 1, ysize);
-        set_matrix_zero(&kernel_pa[device_idx].Uy, Nx, ysize + 1);
+        set_matrix_zero(&kernel_pa[device_idx].Ux, Nx + 1, ysize    );
+        set_matrix_zero(&kernel_pa[device_idx].Uy, Nx    , ysize + 1);
 
         // velocity
-        set_matrix_zero(&kernel_pa[device_idx].Vx, Nx + 1, ysize);
-        set_matrix_zero(&kernel_pa[device_idx].Vy, Nx, ysize + 1);
+        set_matrix_zero(&kernel_pa[device_idx].Vx, Nx + 1, ysize    );
+        set_matrix_zero(&kernel_pa[device_idx].Vy, Nx    , ysize + 1);
     }
 
     delete[] mdata;
@@ -451,74 +451,68 @@ int main(int argc, char** argv) {
             ComputeStress<<<grid, block, 0, streams[device_idx]>>>(kernel_pa[device_idx]);
         }
 
-        // copy stress between devices for stress dependent kernels 
         for (int device_idx = 0; device_idx < devices.size(); device_idx++)
+            gpuErrchk(cudaStreamSynchronize(streams[device_idx]));
+
+        // copy stress between devices for stress dependent kernels 
+        for (int device_idx = 1; device_idx < devices.size(); device_idx++)
         {
-            gpuErrchk(cudaSetDevice(devices[device_idx]));
+            gpuErrchk(cudaMemcpyPeerAsync(
+                kernel_pa[device_idx].P,
+                devices[device_idx],
+                kernel_pa[device_idx - 1].P + Nx * (kernel_pa[device_idx - 1].NyS - 2),
+                devices[device_idx - 1],
+                Nx * sizeof(double),
+                streams[device_idx]
+            ));
 
-            if (device_idx > 0)
-            {
-                gpuErrchk(cudaStreamSynchronize(streams[device_idx - 1]));
+            gpuErrchk(cudaMemcpyPeerAsync(
+                kernel_pa[device_idx].tauXX,
+                devices[device_idx],
+                kernel_pa[device_idx - 1].tauXX + Nx * (kernel_pa[device_idx - 1].NyS - 2),
+                devices[device_idx - 1],
+                Nx * sizeof(double),
+                streams[device_idx]
+            ));
 
-                gpuErrchk(cudaMemcpyPeerAsync(
-                    kernel_pa[device_idx].P,
-                    devices[device_idx],
-                    kernel_pa[device_idx - 1].P + Nx * (kernel_pa[device_idx - 1].NyS - 2),
-                    devices[device_idx - 1],
-                    Nx * sizeof(double),
-                    streams[device_idx]
-                ));
+            gpuErrchk(cudaMemcpyPeerAsync(
+                kernel_pa[device_idx].tauYY,
+                devices[device_idx],
+                kernel_pa[device_idx - 1].tauYY + Nx * (kernel_pa[device_idx - 1].NyS - 2),
+                devices[device_idx - 1],
+                Nx * sizeof(double),
+                streams[device_idx]
+            ));
+        }
 
-                gpuErrchk(cudaMemcpyPeerAsync(
-                    kernel_pa[device_idx].tauXX,
-                    devices[device_idx],
-                    kernel_pa[device_idx - 1].tauXX + Nx * (kernel_pa[device_idx - 1].NyS - 2),
-                    devices[device_idx - 1],
-                    Nx * sizeof(double),
-                    streams[device_idx]
-                ));
+        for (int device_idx = 0; device_idx < devices.size() - 1; device_idx++)
+        {
+            gpuErrchk(cudaMemcpyPeerAsync(
+                kernel_pa[device_idx].P + Nx * (kernel_pa[device_idx].NyS - 1),
+                devices[device_idx],
+                kernel_pa[device_idx + 1].P + Nx,
+                devices[device_idx + 1],
+                Nx * sizeof(double),
+                streams[device_idx]
+            ));
 
-                gpuErrchk(cudaMemcpyPeerAsync(
-                    kernel_pa[device_idx].tauYY,
-                    devices[device_idx],
-                    kernel_pa[device_idx - 1].tauYY + Nx * (kernel_pa[device_idx - 1].NyS - 2),
-                    devices[device_idx - 1],
-                    Nx * sizeof(double),
-                    streams[device_idx]
-                ));
-            }
+            gpuErrchk(cudaMemcpyPeerAsync(
+                kernel_pa[device_idx].tauXX + Nx * (kernel_pa[device_idx].NyS - 1),
+                devices[device_idx],
+                kernel_pa[device_idx + 1].tauXX + Nx,
+                devices[device_idx + 1],
+                Nx * sizeof(double),
+                streams[device_idx]
+            ));
 
-            if (device_idx < devices.size() - 1)
-            {
-                gpuErrchk(cudaStreamSynchronize(streams[device_idx + 1]));
-
-                gpuErrchk(cudaMemcpyPeerAsync(
-                    kernel_pa[device_idx].P + Nx * (kernel_pa[device_idx].NyS - 1),
-                    devices[device_idx],
-                    kernel_pa[device_idx + 1].P + Nx,
-                    devices[device_idx + 1],
-                    Nx * sizeof(double),
-                    streams[device_idx]
-                ));
-
-                gpuErrchk(cudaMemcpyPeerAsync(
-                    kernel_pa[device_idx].tauXX + Nx * (kernel_pa[device_idx].NyS - 1),
-                    devices[device_idx],
-                    kernel_pa[device_idx + 1].tauXX + Nx,
-                    devices[device_idx + 1],
-                    Nx * sizeof(double),
-                    streams[device_idx]
-                ));
-
-                gpuErrchk(cudaMemcpyPeerAsync(
-                    kernel_pa[device_idx].tauYY + Nx * (kernel_pa[device_idx].NyS - 1),
-                    devices[device_idx],
-                    kernel_pa[device_idx + 1].tauYY + Nx,
-                    devices[device_idx + 1],
-                    Nx * sizeof(double),
-                    streams[device_idx]
-                ));
-            }
+            gpuErrchk(cudaMemcpyPeerAsync(
+                kernel_pa[device_idx].tauYY + Nx * (kernel_pa[device_idx].NyS - 1),
+                devices[device_idx],
+                kernel_pa[device_idx + 1].tauYY + Nx,
+                devices[device_idx + 1],
+                Nx * sizeof(double),
+                streams[device_idx]
+            ));
         }
 
         // compute displacement
@@ -528,64 +522,55 @@ int main(int argc, char** argv) {
             ComputeDisp<<<grid, block, 0, streams[device_idx]>>>(kernel_pa[device_idx]);
         }
 
-        // copy displacement between devices before next step
         for (int device_idx = 0; device_idx < devices.size(); device_idx++)
+            gpuErrchk(cudaStreamSynchronize(streams[device_idx]));
+
+        // copy displacement between devices before next step
+        for (int device_idx = 1; device_idx < devices.size(); device_idx++)
         {
-            gpuErrchk(cudaSetDevice(devices[device_idx]));
+            gpuErrchk(cudaMemcpyPeerAsync(
+                kernel_pa[device_idx].Ux,
+                devices[device_idx],
+                kernel_pa[device_idx - 1].Ux + (Nx + 1) * (kernel_pa[device_idx - 1].NyS - 2),
+                devices[device_idx - 1],
+                (Nx + 1) * sizeof(double),
+                streams[device_idx]
+            ));
 
-            if (device_idx > 0)
-            {
-                gpuErrchk(cudaStreamSynchronize(streams[device_idx - 1]));
+            gpuErrchk(cudaMemcpyPeerAsync(
+                kernel_pa[device_idx].Uy,
+                devices[device_idx],
+                kernel_pa[device_idx - 1].Uy + Nx * (kernel_pa[device_idx - 1].NyS - 1),
+                devices[device_idx - 1],
+                Nx * sizeof(double),
+                streams[device_idx]
+            ));
+        }
 
-                gpuErrchk(cudaMemcpyPeerAsync(
-                    kernel_pa[device_idx].Ux,
-                    devices[device_idx],
-                    kernel_pa[device_idx - 1].Ux + (Nx + 1) * (kernel_pa[device_idx - 1].NyS - 2),
-                    devices[device_idx - 1],
-                    (Nx + 1) * sizeof(double),
-                    streams[device_idx]
-                ));
+        for (int device_idx = 0; device_idx < devices.size() - 1; device_idx++)
+        {
+            gpuErrchk(cudaMemcpyPeerAsync(
+                kernel_pa[device_idx].Ux + (Nx + 1) * (kernel_pa[device_idx].NyS - 1),
+                devices[device_idx],
+                kernel_pa[device_idx + 1].Ux + (Nx + 1),
+                devices[device_idx + 1],
+                (Nx + 1) * sizeof(double),
+                streams[device_idx]
+            ));
 
-                gpuErrchk(cudaMemcpyPeerAsync(
-                    kernel_pa[device_idx].Uy,
-                    devices[device_idx],
-                    kernel_pa[device_idx - 1].Uy + Nx * (kernel_pa[device_idx - 1].NyS - 1),
-                    devices[device_idx - 1],
-                    Nx * sizeof(double),
-                    streams[device_idx]
-                ));
-            }
-
-            if (device_idx < devices.size() - 1)
-            {
-                gpuErrchk(cudaStreamSynchronize(streams[device_idx + 1]));
-
-                gpuErrchk(cudaMemcpyPeerAsync(
-                    kernel_pa[device_idx].Ux + (Nx + 1) * (kernel_pa[device_idx].NyS - 1),
-                    devices[device_idx],
-                    kernel_pa[device_idx + 1].Ux + (Nx + 1),
-                    devices[device_idx + 1],
-                    (Nx + 1) * sizeof(double),
-                    streams[device_idx]
-                ));
-
-                gpuErrchk(cudaMemcpyPeerAsync(
-                    kernel_pa[device_idx].Uy + Nx * kernel_pa[device_idx].NyS,
-                    devices[device_idx],
-                    kernel_pa[device_idx + 1].Uy + Nx,
-                    devices[device_idx + 1],
-                    Nx * sizeof(double),
-                    streams[device_idx]
-                ));
-            }
+            gpuErrchk(cudaMemcpyPeerAsync(
+                kernel_pa[device_idx].Uy + Nx * kernel_pa[device_idx].NyS,
+                devices[device_idx],
+                kernel_pa[device_idx + 1].Uy + Nx,
+                devices[device_idx + 1],
+                Nx * sizeof(double),
+                streams[device_idx]
+            ));
         }
 
         // sync before next step
         for (int device_idx = 0; device_idx < devices.size(); device_idx++)
-        {
-            gpuErrchk(cudaSetDevice(devices[device_idx]));
             gpuErrchk(cudaStreamSynchronize(streams[device_idx]));
-        }
 
         // calc error
         if ((iter + 1) % outstep == 0) {
@@ -617,10 +602,10 @@ int main(int argc, char** argv) {
     // bandwidth
     double milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
     double bandwidth = static_cast<double>((
-        2 + // read Ux, Uy in calc_stress
-        4 + // write tauXX, tauYY, tauXY, P in calc_stress
-        6 + // read Vx, Vy, tauXX, tauYY, tauZZ, P in calc_disp
-        4   // write Ux, Uy, Vx, Vy in calc_disp
+        2 + // read Ux, Uy in ComputeStress
+        4 + // write tauXX, tauYY, tauXY, P in ComputeStress
+        6 + // read Vx, Vy, tauXX, tauYY, tauZZ, P in ComputeDisp
+        4   // write Ux, Uy, Vx, Vy in ComputeDisp
         ) * iter * sizeof(double) * (Nx + 1) * (Ny + 1)) / milliseconds / 1.0e6;
     std::cout
         << "\n"
