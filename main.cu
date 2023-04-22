@@ -360,15 +360,6 @@ int main(int argc, char** argv) {
         kernel_pa[device_idx].Ny    = Ny;
 
         // slice size & shift
-        //  --------> y
-        // 
-        //                |_:_______(1)______:_|
-        // |----------------|----------------|----------------|--------...   orig (Ny + 1)
-        // |_______(0)______:_|            |_:_______(2)______:_|
-        //                                 ^
-        // |<-----ysize------>|            |
-        //                               yshift
-
         size_t ysize  = Ny / devices.size() + 2;
         size_t yshift = (ysize - 2) * device_idx - 1;
 
@@ -449,76 +440,6 @@ int main(int argc, char** argv) {
         {
             gpuErrchk(cudaSetDevice(devices[device_idx]));
             ComputeStress<<<grid, block, 0, streams[device_idx]>>>(kernel_pa[device_idx]);
-        }
-
-        for (int device_idx = 0; device_idx < devices.size(); device_idx++)
-            gpuErrchk(cudaStreamSynchronize(streams[device_idx]));
-
-        // copy stress between devices for stress dependent kernels 
-        for (int device_idx = 1; device_idx < devices.size(); device_idx++)
-        {
-            gpuErrchk(cudaMemcpyPeerAsync(
-                kernel_pa[device_idx].P,
-                devices[device_idx],
-                kernel_pa[device_idx - 1].P + Nx * (kernel_pa[device_idx - 1].NyS - 2),
-                devices[device_idx - 1],
-                Nx * sizeof(double),
-                streams[device_idx]
-            ));
-
-            gpuErrchk(cudaMemcpyPeerAsync(
-                kernel_pa[device_idx].tauXX,
-                devices[device_idx],
-                kernel_pa[device_idx - 1].tauXX + Nx * (kernel_pa[device_idx - 1].NyS - 2),
-                devices[device_idx - 1],
-                Nx * sizeof(double),
-                streams[device_idx]
-            ));
-
-            gpuErrchk(cudaMemcpyPeerAsync(
-                kernel_pa[device_idx].tauYY,
-                devices[device_idx],
-                kernel_pa[device_idx - 1].tauYY + Nx * (kernel_pa[device_idx - 1].NyS - 2),
-                devices[device_idx - 1],
-                Nx * sizeof(double),
-                streams[device_idx]
-            ));
-        }
-
-        for (int device_idx = 0; device_idx < devices.size() - 1; device_idx++)
-        {
-            gpuErrchk(cudaMemcpyPeerAsync(
-                kernel_pa[device_idx].P + Nx * (kernel_pa[device_idx].NyS - 1),
-                devices[device_idx],
-                kernel_pa[device_idx + 1].P + Nx,
-                devices[device_idx + 1],
-                Nx * sizeof(double),
-                streams[device_idx]
-            ));
-
-            gpuErrchk(cudaMemcpyPeerAsync(
-                kernel_pa[device_idx].tauXX + Nx * (kernel_pa[device_idx].NyS - 1),
-                devices[device_idx],
-                kernel_pa[device_idx + 1].tauXX + Nx,
-                devices[device_idx + 1],
-                Nx * sizeof(double),
-                streams[device_idx]
-            ));
-
-            gpuErrchk(cudaMemcpyPeerAsync(
-                kernel_pa[device_idx].tauYY + Nx * (kernel_pa[device_idx].NyS - 1),
-                devices[device_idx],
-                kernel_pa[device_idx + 1].tauYY + Nx,
-                devices[device_idx + 1],
-                Nx * sizeof(double),
-                streams[device_idx]
-            ));
-        }
-
-        // compute displacement
-        for (int device_idx = 0; device_idx < devices.size(); device_idx++)
-        {
-            gpuErrchk(cudaSetDevice(devices[device_idx]));
             ComputeDisp<<<grid, block, 0, streams[device_idx]>>>(kernel_pa[device_idx]);
         }
 
@@ -540,7 +461,7 @@ int main(int argc, char** argv) {
             gpuErrchk(cudaMemcpyPeerAsync(
                 kernel_pa[device_idx].Uy,
                 devices[device_idx],
-                kernel_pa[device_idx - 1].Uy + Nx * (kernel_pa[device_idx - 1].NyS - 1),
+                kernel_pa[device_idx - 1].Uy + Nx * (kernel_pa[device_idx - 1].NyS - 2),
                 devices[device_idx - 1],
                 Nx * sizeof(double),
                 streams[device_idx]
@@ -561,7 +482,7 @@ int main(int argc, char** argv) {
             gpuErrchk(cudaMemcpyPeerAsync(
                 kernel_pa[device_idx].Uy + Nx * kernel_pa[device_idx].NyS,
                 devices[device_idx],
-                kernel_pa[device_idx + 1].Uy + Nx,
+                kernel_pa[device_idx + 1].Uy + 2 * Nx,
                 devices[device_idx + 1],
                 Nx * sizeof(double),
                 streams[device_idx]
