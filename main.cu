@@ -19,7 +19,6 @@
 #define BLOCK_SIZE 1024
 #define BLOCK_SIZE_2D_X 32
 #define BLOCK_SIZE_2D_Y 32
-#define NL 2
 
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -343,7 +342,7 @@ int main(int argc, char** argv) {
     {
         gpuErrchk(cudaSetDevice(devices[device_idx]));
 
-        gpuErrchk(cudaStreamCreate(&streams[device_idx]));
+        gpuErrchk(cudaStreamCreateWithFlags(&streams[device_idx], cudaStreamNonBlocking));
 
         // constants
         kernel_pa[device_idx].dt    = config["dt"];
@@ -427,7 +426,6 @@ int main(int argc, char** argv) {
     {
         gpuErrchk(cudaSetDevice(devices[device_idx]));
         SetDisp<<<grid, block, 0, streams[device_idx]>>>(strain[0], strain[1], strain[2], kernel_pa[device_idx]);
-        gpuErrchk(cudaStreamSynchronize(streams[device_idx]));
     }
 
     double error = 0.0;

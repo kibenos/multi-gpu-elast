@@ -5,7 +5,7 @@ colormap jet
 
 loadValue = -0.000015;
 loadType = [4.0, -2.0, 0.0];
-nGrid = 16;
+nGrid = 32;
 nIter = 100000;
 eIter = 1.0e-10;
 devices = [0, 1];
