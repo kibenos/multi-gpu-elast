@@ -1,21 +1,10 @@
-
-C_ijkl.png
-
 *.gpl
-
-.vscode
 *.dat
-
-a.exe
-
-a.exp
-
-a.lib
-*.png
-
-*.tiff
-
 *.log
 *.asv
+
+a.exe
+a.exp
+a.lib
 
 /src

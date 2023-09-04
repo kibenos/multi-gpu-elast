@@ -8,5 +8,5 @@ add_executable(elastx
   json.hpp
 )
 
-set_target_properties(elastx PROPERTIES CUDA_ARCHITECTURES "70;75")
+set_target_properties(elastx PROPERTIES CUDA_ARCHITECTURES "70;75;80")
 set_property(TARGET elastx PROPERTY CUDA_SEPARABLE_COMPILATION ON)

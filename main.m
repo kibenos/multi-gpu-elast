@@ -53,7 +53,7 @@ config.eiter       = eIter;
 config.devices     = devices;
 config.output_step = outputStep;
 
-configJson = jsonencode(config, 'PrettyPrint', true);
+configJson = jsonencode(config);
 fid = fopen('config.json', 'w');
 fprintf(fid, '%s', configJson);
 fclose(fid);
