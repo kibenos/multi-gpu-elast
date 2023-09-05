@@ -4,6 +4,8 @@
 #include <vector>
 #include <string>
 #include <chrono>
+#include <iomanip>
+#include <algorithm>
 #include <type_traits>
 
 #include <cuda_runtime.h>
@@ -13,8 +15,6 @@
 #include <thrust/extrema.h>
 #include <thrust/functional.h>
 #include <thrust/device_ptr.h>
-
-#include "json.hpp"
 
 #define BLOCK_SIZE 1024
 #define BLOCK_SIZE_2D_X 32
@@ -304,27 +304,27 @@ int main(int argc, char** argv) {
     std::ifstream config_file(config_filename, std::ios::in);
     if (!config_file) { std::cout << "cannot open config file: " << config_filename << '\n'; exit(EXIT_FAILURE); }
 
-    auto config = nlohmann::json::parse(config_file);
+    config_file.seekg(0, std::ios::end);
+    size_t config_size = config_file.tellg();
+    auto config = new double[config_size / sizeof(double)];
+    config_file.seekg(0);
+    config_file.read(reinterpret_cast<char*>(config), config_size);
 
     // input parameters
-    size_t const niter   = config["niter"];
-    double const eiter   = config["eiter"];
-    size_t const Nx      = config["mesh_size"][0];
-    size_t const Ny      = config["mesh_size"][1];
-    size_t const outstep = config["output_step"];
+    size_t const niter   = round(config[15]);
+    double const eiter   = config[16];
+    size_t const Nx      = round(config[0]);
+    size_t const Ny      = round(config[1]);
+    size_t const outstep = round(config[17]);
 
     // load
-    double const load_value = config["load_value"];
-    std::array<double, 3> const load_type = config["load_type"];
+    double const load_value = config[11];
+    std::vector<double> load_type = { config[12], config[13], config[14] };
 
     std::vector<size_t> devices;
-    try
+    for (int i = 18; i < config_size / sizeof(double); i++)
     {
-        devices = config["devices"].get<std::vector<size_t>>();
-    }
-    catch (std::exception const& e)
-    {
-        devices = std::vector<size_t>({ config["devices"].get<size_t>() });
+        devices.emplace_back(static_cast<size_t>(config[i]));
     }
 
     // cuda
@@ -334,9 +334,9 @@ int main(int argc, char** argv) {
     std::vector<cudaStream_t> streams(devices.size());
 
     // material data
-    auto mdata = read_file<char>(config["matrix"], Nx * Ny);
-    auto Kdata = read_file<float>(config["K"], Nx * Ny);
-    auto Gdata = read_file<float>(config["G"], Nx * Ny);
+    auto mdata = read_file<char>("m.dat", Nx * Ny);
+    auto Kdata = read_file<float>("K.dat", Nx * Ny);
+    auto Gdata = read_file<float>("G.dat", Nx * Ny);
 
     for (int device_idx = 0; device_idx < devices.size(); device_idx++)
     {
@@ -345,15 +345,15 @@ int main(int argc, char** argv) {
         gpuErrchk(cudaStreamCreateWithFlags(&streams[device_idx], cudaStreamNonBlocking));
 
         // constants
-        kernel_pa[device_idx].dt    = config["dt"];
-        kernel_pa[device_idx].dX    = config["dx"];
-        kernel_pa[device_idx].dY    = config["dy"];
-        kernel_pa[device_idx].Lx    = config["phys_size"][0];
-        kernel_pa[device_idx].Ly    = config["phys_size"][1];
-        kernel_pa[device_idx].dampX = config["dampx"];
-        kernel_pa[device_idx].dampY = config["dampy"];
-        kernel_pa[device_idx].rho0  = config["rho0"];
-        kernel_pa[device_idx].coh   = config["coh"];
+        kernel_pa[device_idx].dt    = config[6];
+        kernel_pa[device_idx].dX    = config[4];
+        kernel_pa[device_idx].dY    = config[5];
+        kernel_pa[device_idx].Lx    = config[2];
+        kernel_pa[device_idx].Ly    = config[3];
+        kernel_pa[device_idx].dampX = config[7];
+        kernel_pa[device_idx].dampY = config[8];
+        kernel_pa[device_idx].rho0  = config[9];
+        kernel_pa[device_idx].coh   = config[10];
         kernel_pa[device_idx].P0    = kernel_pa[device_idx].coh;
         kernel_pa[device_idx].Nx    = Nx;
         kernel_pa[device_idx].Ny    = Ny;
@@ -403,6 +403,7 @@ int main(int argc, char** argv) {
         set_matrix_zero(&kernel_pa[device_idx].Vy, Nx    , ysize + 1);
     }
 
+    delete[] config;
     delete[] mdata;
     delete[] Kdata;
     delete[] Gdata;
@@ -414,7 +415,7 @@ int main(int argc, char** argv) {
     grid.y = kernel_pa[0].NyS / BLOCK_SIZE_2D_Y + 1;
     grid.z = 1;
 
-    std::array<double, 3> strain = { 
+    std::vector<double> strain = { 
         load_value * load_type[0], 
         load_value * load_type[1], 
         load_value * load_type[2] 

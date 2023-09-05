@@ -5,7 +5,6 @@ set(CMAKE_CXX_STANDARD 17)
 
 add_executable(elastx 
   main.cu
-  json.hpp
 )
 
 set_target_properties(elastx PROPERTIES CUDA_ARCHITECTURES "70;75;80")
